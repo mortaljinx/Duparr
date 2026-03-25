@@ -1,10 +1,19 @@
 # Duparr
 
+<div align="center">
+
 **Enforce a clean music library: one artist, one song, one copy.**
 
 Duparr is a self-hosted music deduplication engine that scans your library, groups duplicate tracks using metadata and optional audio fingerprinting, scores them by quality, and lets you safely review and move them — nothing is ever deleted.
 
-![Docker Pulls](https://img.shields.io/badge/status-v1.0.0-green?style=flat-square) ![License](https://img.shields.io/badge/license-MIT-lightgrey?style=flat-square)
+![GitHub release](https://img.shields.io/github/v/release/mortaljinx/duparr?style=flat-square)
+![License](https://img.shields.io/badge/license-MIT-lightgrey?style=flat-square)
+![Docker](https://img.shields.io/badge/docker-self--hosted-blue?style=flat-square)
+![Python](https://img.shields.io/badge/python-3.12-blue?style=flat-square)
+![SQLite](https://img.shields.io/badge/database-sqlite-lightblue?style=flat-square)
+![Status](https://img.shields.io/badge/status-stable-green?style=flat-square)
+
+</div>
 
 ---
 
