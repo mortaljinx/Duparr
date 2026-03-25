@@ -1,27 +1,33 @@
 services:
   duparr:
     image: duparr-local
+    build: .
     container_name: duparr
     restart: unless-stopped
     ports:
       - "5045:5045"
     volumes:
-      - /mnt/nas/data/media/music:/music:ro
-      - /mnt/nas/data/media/music:/music-rw
-      - /mnt/nas/data/media/duplicates:/duplicates
-      - /mnt/nvme/docker/duparr/ui:/ui
-      - duparr-data:/data
+      - /your/music/library:/music-rw          # your music library (read-write, for cover embedding)
+      - /your/duplicates/folder:/duplicates     # where duplicates are moved
+      - ./ui:/ui                                # UI data folder
+      - duparr-data:/data                       # SQLite database volume
     environment:
       PYTHONUNBUFFERED: "1"
       MUSIC_DIR: /music-rw
       DUP_DIR: /duplicates
       DB_PATH: /data/music.db
-      USE_FINGERPRINT: "true"
+      USE_FINGERPRINT: "false"                  # set to "true" for audio fingerprinting (slower)
       FPCALC_PATH: /usr/bin/fpcalc
+      EXCLUDE_DIRS: ""                          # comma-separated dirs to skip, e.g. /music-rw/mnt
+      MIN_SCORE_GAP: "0"                        # raise to e.g. "10" to only flag clear quality differences
       COVER_SOURCES: musicbrainz,itunes
       COVER_MIN_SIZE: "300"
       COVER_EMBED: "true"
       COVER_SAVE_FILE: "true"
+      # DUPARR_PASSWORD: "changeme"             # uncomment to enable basic auth
+      # NAVIDROME_URL: "http://navidrome:4533"  # uncomment to trigger Navidrome rescan after Apply
+      # NAVIDROME_USER: "admin"
+      # NAVIDROME_PASSWORD: "changeme"
 
 volumes:
   duparr-data:
