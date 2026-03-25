@@ -1,6 +1,6 @@
-# Duparr
-
 <div align="center">
+
+# Duparr
 
 **Enforce a clean music library: one artist, one song, one copy.**
 
@@ -12,6 +12,9 @@ Duparr is a self-hosted music deduplication engine that scans your library, grou
 ![Python](https://img.shields.io/badge/python-3.12-blue?style=flat-square)
 ![SQLite](https://img.shields.io/badge/database-sqlite-lightblue?style=flat-square)
 ![Status](https://img.shields.io/badge/status-stable-green?style=flat-square)
+
+![Dashboard](.github/screenshots/dashboard.png)
+![Undo](.github/screenshots/undo.png)
 
 </div>
 
