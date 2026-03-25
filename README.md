@@ -13,9 +13,6 @@ Duparr is a self-hosted music deduplication engine that scans your library, grou
 ![SQLite](https://img.shields.io/badge/database-sqlite-lightblue?style=flat-square)
 ![Status](https://img.shields.io/badge/status-stable-green?style=flat-square)
 
-![Dashboard](.github/screenshots/dashboard.png)
-![Undo](.github/screenshots/undo.png)
-
 </div>
 
 ---
