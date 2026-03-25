@@ -1,234 +1,250 @@
 # Duparr
 
-**Duplicate music library manager for self-hosters.**
+**Self-hosted music library deduplication for Navidrome, Symfonium, and any local music collection.**
 
-Duparr scans your music library, identifies duplicate tracks, and moves them to a safe holding folder — nothing is ever deleted. A web UI lets you review, apply, and undo everything.
+Duparr scans your library, finds duplicate tracks, scores them by quality, and lets you review and move them through a web UI — nothing is ever deleted.
 
-Built for Navidrome + Symfonium but works with any music library on disk.
+![Dashboard](https://img.shields.io/badge/status-v1.0.0-green) ![Docker](https://img.shields.io/badge/docker-self--hosted-blue) ![License](https://img.shields.io/badge/license-MIT-lightgrey)
 
 ---
 
 ## Features
 
-- **Two-pass duplicate detection**
-  - Chromaprint audio fingerprint (primary) — catches duplicates across formats and bitrates
-  - Artist + title identity matching (fallback) — one artist, one song, one copy
-- **Variant preservation** — remixes, live versions, acoustic versions are always kept
-- **Quality scoring** — keeps the best copy (FLAC over MP3, higher bitrate, proper artist folders over compilations)
-- **Incremental scanning** — after the first scan, only new and changed files are processed
-- **Safe by design** — files are moved to `/duplicates`, never deleted. Full undo from the UI
-- **Web UI** — review groups, apply moves, restore files, view job history and logs
-- **Navidrome integration** — optionally trigger a library rescan after moves
-- **Docker / Portainer ready** — single container, persistent data volume
+- **Never deletes** — duplicates are moved to a `/duplicates` folder, fully reversible from the UI
+- **Dual detection** — metadata matching (fast) with optional Chromaprint audio fingerprinting (accurate)
+- **Incremental scanning** — only processes new or changed files on subsequent scans
+- **Smart scoring** — keeps the highest quality copy: FLAC > AAC/OGG > MP3, bitrate, tags, artwork
+- **Variant detection** — preserves remixes, live versions, acoustic versions, and radio edits
+- **Same-album guard** — won't mark CD1/CD2 or vinyl sides as duplicates
+- **Cover art fetcher** — finds and embeds missing album art from MusicBrainz and iTunes
+- **Full undo** — restore any moved file to its original location from the UI
+- **Progress bar** — live scan and dedup progress with log streaming
+- **Optional auth** — basic auth via env var, off by default for LAN use
+
+---
+
+## Screenshots
+
+> Dashboard showing duplicate groups with confidence scores, keeper/dupe labelling, and space savings.
 
 ---
 
 ## Quick Start
 
-### 1. Clone and build
+### 1. Clone
 
 ```bash
-git clone https://github.com/yourname/duparr.git
+git clone https://github.com/mortaljinx/duparr.git
 cd duparr
-docker build -t duparr-local .
 ```
 
-### 2. Create your `docker-compose.yml`
+### 2. Configure `docker-compose.yml`
+
+Edit the volume paths to match your setup:
 
 ```yaml
-services:
-  duparr:
-    image: duparr-local
-    pull_policy: never
-    container_name: duparr
-    restart: unless-stopped
-    ports:
-      - "5045:5045"
-    volumes:
-      - /path/to/your/music:/music-rw
-      - /path/to/your/duplicates:/duplicates
-      - duparr-data:/data
-      - ./ui:/ui
-    environment:
-      MUSIC_DIR: /music-rw
-      DUP_DIR: /duplicates
-      DB_PATH: /data/music.db
-      USE_FINGERPRINT: "false"   # set true for deeper matching (slower)
-      MIN_SCORE_GAP: "0"         # 0 = move all dupes regardless of quality gap
-
 volumes:
-  duparr-data:
+  - /your/music/library:/music-rw
+  - /your/duplicates/folder:/duplicates
+  - /your/docker/duparr/ui:/ui
+  - duparr-data:/data
 ```
 
-### 3. Deploy and open
+### 3. Build and run
 
 ```bash
+docker compose build
 docker compose up -d
 ```
 
-Open `http://your-server:5045`
+### 4. Open the UI
+
+```
+http://your-server-ip:5045
+```
+
+Click **SCAN + FIND** to index your library and detect duplicates.
 
 ---
 
-## Usage
+## How It Works
 
-### Workflow
-
-1. **Scan + Find Dupes** — indexes your library and groups duplicates
-2. **Review** — browse groups in the UI, check what will be moved
-3. **Apply All & Rescan** — moves duplicates to `/duplicates`, rescans, refreshes
-4. Repeat until recoverable space stops dropping
-
-### First scan
-
-The first scan processes your entire library. Subsequent scans are incremental — only new or changed files are processed, completing in seconds.
-
-If you want to force a full rescan, wipe the database:
-
-```bash
-docker exec duparr python3 -c "
-import sys; sys.path.insert(0, '/app')
-import config
-from db import Database
-db = Database(config.DB_PATH)
-db.conn.execute('DELETE FROM tracks')
-db.conn.commit()
-print('Done')
-"
+```
+Scan → Index → Group → Score → Review → Move → Undo
 ```
 
-### Undoing moves
+1. **Scan** — walks your music directory, reads tags and mtime, stores in SQLite. Incremental — only changed files are re-read.
+2. **Find Dupes** — groups tracks by `(primary_artist, clean_title)`. Variants (remixes, live, acoustic) are detected and preserved. Same-album tracks require fingerprint confirmation.
+3. **Score** — each track is scored, highest score is the keeper.
+4. **Review** — UI shows every group with keeper highlighted, confidence badge, space saved, and reason.
+5. **Apply** — moves duplicate files to `/duplicates` preserving relative paths. DB updated only after successful move.
+6. **Undo** — restore any file from the Undo page.
 
-Open `/undo` in the UI to see all files in `/duplicates` and restore them individually or all at once.
+---
+
+## Scoring System
+
+| Condition | Points |
+|---|---|
+| FLAC format | +100 |
+| AAC / OGG / Opus | +50 |
+| MP3 | +30 |
+| Bitrate (proportional, capped) | +0 to +50 |
+| Complete tags | +10 |
+| Has embedded artwork | +5 |
+| Filesize tiebreaker | +0 to +10 |
+| `_collections` folder | −100 |
+| Compilation album tag | −40 |
 
 ---
 
 ## Configuration
 
-All settings are environment variables — no config files to edit.
+All configuration is via environment variables in `docker-compose.yml`.
 
 | Variable | Default | Description |
 |---|---|---|
-| `MUSIC_DIR` | `/music` | Path to your music library inside the container |
+| `MUSIC_DIR` | `/music-rw` | Music root inside container |
 | `DUP_DIR` | `/duplicates` | Where duplicates are moved |
-| `DB_PATH` | `/data/music.db` | SQLite database location |
-| `USE_FINGERPRINT` | `true` | Enable Chromaprint audio fingerprinting |
+| `DB_PATH` | `/data/music.db` | SQLite database path |
+| `USE_FINGERPRINT` | `false` | Enable Chromaprint audio fingerprinting |
 | `FPCALC_PATH` | `/usr/bin/fpcalc` | Path to fpcalc binary |
-| `FPCALC_TIMEOUT` | `60` | Seconds before fingerprint times out per file |
-| `MIN_SCORE_GAP` | `10` | Minimum quality difference before moving a dupe. Set `0` to move all |
-| `COLLECTIONS_PENALTY` | `100` | Score penalty for tracks in `_collections` folders |
-| `EXCLUDE_DIRS` | _(empty)_ | Comma-separated paths to skip during scanning |
-| `COVER_SOURCES` | `musicbrainz,itunes` | Cover art sources in priority order |
+| `EXCLUDE_DIRS` | _(empty)_ | Comma-separated dirs to skip (e.g. `/music-rw/mnt`) |
+| `MIN_SCORE_GAP` | `0` | Minimum score difference before a track is flagged |
+| `COVER_SOURCES` | `musicbrainz,itunes` | Cover art sources, in priority order |
 | `COVER_MIN_SIZE` | `300` | Minimum cover dimension in pixels |
-| `COVER_EMBED` | `true` | Embed fetched covers into audio files |
-| `COVER_SAVE_FILE` | `true` | Save fetched covers as `cover.jpg` in album folder |
-| `LASTFM_API_KEY` | _(empty)_ | Last.fm API key for cover fetching |
-| `NAVIDROME_URL` | _(empty)_ | e.g. `http://navidrome:4533` — triggers rescan after moves |
+| `COVER_EMBED` | `true` | Embed cover art into audio files |
+| `COVER_SAVE_FILE` | `true` | Save `cover.jpg` alongside audio files |
+| `DUPARR_PASSWORD` | _(empty)_ | Enable basic auth — leave empty to disable |
+| `NAVIDROME_URL` | _(empty)_ | Auto-trigger Navidrome rescan after Apply |
 | `NAVIDROME_USER` | _(empty)_ | Navidrome username |
 | `NAVIDROME_PASSWORD` | _(empty)_ | Navidrome password |
 
 ---
 
-## How duplicate detection works
+## Authentication
 
-### Pass 1 — Fingerprint
+Auth is **off by default** — suitable for trusted LAN use.
 
-Uses Chromaprint (`fpcalc`) to generate an audio fingerprint for each file. Identical audio produces identical fingerprints regardless of format, bitrate, or tags. This catches the same recording in FLAC and MP3 simultaneously.
-
-Enable with `USE_FINGERPRINT=true`. Slower but more thorough — recommended for a one-time deep clean.
-
-### Pass 2 — Identity matching
-
-Groups tracks by `(primary_artist, clean_title)`. "Bad" by Michael Jackson from six different compilation albums all map to the same identity key and form one group.
-
-- Primary artist = first token from the artist tag (order-preserved)
-- Clean title = title with bracket variant content stripped, punctuation removed, lowercased
-- Same-folder tracks are excluded — two tracks in the same album folder are almost certainly different songs, not duplicates
-
-### Variant detection
-
-Tracks are classified as variants and **never moved** if their title contains recognised keywords in brackets:
-
-- `Bad (Remix)` → variant
-- `Bad [Live at Wembley]` → variant  
-- `Bad` → original
-
-Multi-word phrases in the file path are also checked (`radio edit`, `extended mix`, `club mix` etc.). Single-word path matching is intentionally avoided — words like `mix`, `live`, `edit` appear in too many legitimate folder and album names.
-
-### Scoring
-
-The keeper in each group is the highest-scoring track:
-
-| Factor | Points |
-|---|---|
-| FLAC format | +100 |
-| AAC / OGG / Opus | +50 |
-| MP3 | +30 |
-| Bitrate (capped) | +0 to +50 |
-| Complete tags | +10 |
-| Has artwork | +5 |
-| File size tiebreaker | +0 to +10 |
-| `_collections` folder | −100 |
-| Compilation album | −40 |
-
-Properly organised artist folders always beat compilation dumps. FLAC always beats MP3.
-
----
-
-## Excluding folders
-
-If you have torrent staging folders, symlink targets, or any other paths inside your music directory that should not be scanned:
+To enable, add to your `docker-compose.yml`:
 
 ```yaml
 environment:
-  EXCLUDE_DIRS: /music-rw/staging,/music-rw/tmp
+  DUPARR_PASSWORD: "your-password-here"
 ```
 
-Note: if you use hard links from a torrent client into your music folder, make sure the hard link destination is a clean path that Duparr will scan correctly. Avoid hard linking the full absolute path structure (e.g. `/music/mnt/data/torrents/...`) as this creates phantom duplicates.
+The UI will prompt for a password in the browser. The `/health` endpoint is always public for Docker healthchecks.
 
 ---
 
-## Fingerprinting performance
+## Variant Detection
 
-On large libraries (50k+ tracks), fingerprinting can take many hours. Recommended approach:
+Duparr preserves tracks that are genuine variants — they appear in the UI as **VAR.** and are never moved.
 
-1. Run with `USE_FINGERPRINT=false` first — identity matching catches the majority of duplicates quickly
-2. Once the library is clean, enable `USE_FINGERPRINT=true` for a deeper pass to catch cross-format duplicates
+Detected as variants:
+- Bracket keywords in title: `(Remix)`, `[Live]`, `(Acoustic)`, `(Demo)`, `(Instrumental)` etc.
+- Multi-word bracket phrases: `(Radio Edit)`, `(Extended Mix)`, `(Club Version)` etc.
+- Dash-suffix patterns: `Song - Live`, `Song - Acoustic Mix`, `Song - Remaster`
+- Multi-word phrases in file path: `live version`, `radio edit`, `extended mix` etc.
 
 ---
 
-## Project structure
+## Same-Album Guard
 
+Tracks in the same folder, or sibling disc subfolders (`CD1`/`CD2`, `Disc 1`/`Disc 2`, `Side A`/`Side B`), are **not** flagged as duplicates based on metadata alone. Fingerprint match is required. This prevents false positives on multi-disc albums and box sets.
+
+---
+
+## Cover Art
+
+Click **# COVERS** in the dashboard to fetch missing album art.
+
+- Groups tracks by folder (one fetch per album)
+- Queries MusicBrainz Cover Art Archive first, iTunes as fallback
+- Embeds into MP3 (ID3), FLAC, and M4A/AAC files
+- Saves `cover.jpg` alongside tracks for Navidrome/Symfonium
+
+---
+
+## Undo
+
+Every move is logged. From the **UNDO** page you can:
+- See all moved files with their original paths
+- Restore individual files or all files at once
+- See total space currently in `/duplicates`
+
+---
+
+## Docker Compose Example
+
+```yaml
+services:
+  duparr:
+    image: duparr-local
+    build: .
+    container_name: duparr
+    restart: unless-stopped
+    ports:
+      - "5045:5045"
+    volumes:
+      - /mnt/nas/media/music:/music-rw
+      - /mnt/nas/media/duplicates:/duplicates
+      - /opt/docker/duparr/ui:/ui
+      - duparr-data:/data
+    environment:
+      MUSIC_DIR: /music-rw
+      DUP_DIR: /duplicates
+      DB_PATH: /data/music.db
+      USE_FINGERPRINT: "false"
+      EXCLUDE_DIRS: /music-rw/mnt
+      COVER_SOURCES: musicbrainz,itunes
+      COVER_MIN_SIZE: "300"
+      COVER_EMBED: "true"
+      COVER_SAVE_FILE: "true"
+      MIN_SCORE_GAP: "0"
+      # DUPARR_PASSWORD: "changeme"
+      # NAVIDROME_URL: "http://navidrome:4533"
+      # NAVIDROME_USER: "admin"
+      # NAVIDROME_PASSWORD: "changeme"
+
+volumes:
+  duparr-data:
 ```
-duparr/
-├── app/
-│   ├── main.py        # CLI orchestrator
-│   ├── app.py         # Flask web UI
-│   ├── scanner.py     # Library scanner with incremental support
-│   ├── deduper.py     # Duplicate detection and scoring engine
-│   ├── cover.py       # Album art fetcher
-│   ├── db.py          # SQLite database layer
-│   ├── config.py      # Configuration from environment variables
-│   └── templates/
-│       ├── index.html # Dashboard
-│       ├── report.html
-│       ├── undo.html
-│       └── report.html
-├── Dockerfile
-├── docker-compose.yml
-└── README.md
-```
+
+---
+
+## Supported Formats
+
+MP3, FLAC, AAC (M4A), OGG, Opus, WMA, WAV, AIFF, APE, WavPack
 
 ---
 
 ## Requirements
 
-- Docker
-- A music library on disk
-- (~Optional) Chromaprint (`fpcalc`) — included in the Docker image
+- Docker + Docker Compose
+- Music library mounted as a volume
+- A separate `/duplicates` volume with write access
 
 ---
 
-## Licence
+## Roadmap
 
-MIT
+- [ ] Smart keep rules — user-configurable format/folder preferences
+- [ ] Auto-clean mode — cron-triggered apply for HIGH confidence groups only
+- [ ] CLI mode — headless operation without the web UI
+- [ ] Webhook support — notify external services after Apply
+- [ ] Non-root container user
+
+---
+
+## License
+
+MIT — do whatever you want with it.
+
+---
+
+## Notes
+
+- `USE_FINGERPRINT=false` is recommended for large libraries (51k+ tracks). Metadata matching is fast and accurate for most collections. Enable fingerprinting for collections with lots of untagged or mis-tagged files.
+- The `/duplicates` folder mirrors your library structure. If you decide to delete after reviewing, `rm -rf /duplicates` is safe.
+- Duparr does not modify any file in your music library except to embed cover art (when `COVER_EMBED=true`).
